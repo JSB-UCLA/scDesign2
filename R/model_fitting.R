@@ -310,7 +310,7 @@ fit_model_multi_cell_type <- function(data_mat, cell_type_sel, sim_method = c('c
   }else if(sim_method == 'ind'){
     param <- mclapply(1:length(cell_type_sel), function(iter){
       fit_wo_copula(data_mat[, colnames(data_mat) == cell_type_sel[iter]], marginal,
-                    jitter = jitter, zp_cutoff = zp_cutoff,
+                    jitter = jitter,
                     min_nonzero_num = min_nonzero_num)
     }, mc.cores = ncores)
   }
