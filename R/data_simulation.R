@@ -3,7 +3,7 @@
 #' @param copula_result A list that contains the parameters of a copula model.
 #' @param n             An integer value that indicates the number of cells to generate.
 #' @param marginal      A character string that indicates whether the generated values should
-#'                      stay as discrete or switch to continuous. Default value is 'ind', which
+#'                      stay as discrete or switch to continuous. Default value is 'nb', which
 #'                      should be used for generating a count marix. The alternative 'Gamma' is
 #'                      only needed when this function is being called by other functions that
 #'                      generate data with a user-specified sequencing depth. Normally, users
