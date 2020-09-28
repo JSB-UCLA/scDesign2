@@ -11,7 +11,7 @@
 #' @return A matrix of shape p by n that contains the simulated count values. p is derived from
 #' \code{copula_result}
 #'
-#' @export
+# @export
 simulate_count_copula <- function(copula_result, n = 100,
                                   marginal = c('nb', 'Gamma')){
   marginal <- match.arg(marginal)
@@ -73,7 +73,7 @@ simulate_count_copula <- function(copula_result, n = 100,
 #' @return A matrix of shape p by n that contains the simulated count values. p is derived from
 #' \code{model_params}.
 #'
-#' @export
+# @export
 simulate_count_ind <- function(model_params, n = 100,
                                marginal = c('nb', 'Gamma')){
   marginal <- match.arg(marginal)
@@ -169,13 +169,25 @@ simulate_count_ind <- function(model_params, n = 100,
 #' \code{model_params}.
 #'
 #' @export
-simulate_count_multi_cell_type <- function(model_params, total_count_new, n_cell_new,
-                                           cell_type_prop = 1, total_count_old = NULL,
-                                           n_cell_old = NULL, sim_method = c('copula', 'ind'),
-                                           reseq_method = c('mean_scale', 'multinomial'),
-                                           cell_sample = TRUE){
+simulate_count_scDesign2 <- function(model_params, total_count_new = NULL, n_cell_new = NULL,
+                                     cell_type_prop = NULL, total_count_old = NULL,
+                                     n_cell_old = NULL, sim_method = c('copula', 'ind'),
+                                     reseq_method = c('mean_scale', 'multinomial'),
+                                     cell_sample = TRUE){
   sim_method <- match.arg(sim_method)
   reseq_method <- match.arg(reseq_method)
+
+  n_cell_vec <- sapply(model_params, function(x) x$n_cell)
+  n_read_vec <- sapply(model_params, function(x) x$n_read)
+  if(is.null(total_count_new)) total_count_new <- sum(n_read_vec)
+  if(is.null(n_cell_new))      n_cell_new      <- sum(n_cell_vec)
+  if(is.null(cell_type_prop))  cell_type_prop  <- n_cell_vec
+  if(is.null(total_count_old)) total_count_old <- sum(n_read_vec)
+  if(is.null(n_cell_old))      n_cell_old      <- sum(n_cell_vec)
+
+  if(length(model_params)!=cell_type_prop){
+    stop('Cell type proportion should have the same length as the number of models.')
+  }
 
   n_cell_type <- length(cell_type_prop)
   if(cell_sample == TRUE){
@@ -215,7 +227,12 @@ simulate_count_multi_cell_type <- function(model_params, total_count_new, n_cell
                                                        marginal = 'nb')
         }
       }
-    colnames(new_count) <- unlist(lapply(1:n_cell_type, function(x){rep(x, n_cell_each[x])}))
+    if(is.null(names(model_params))){
+      colnames(new_count) <- unlist(lapply(1:n_cell_type, function(x){rep(x, n_cell_each[x])}))
+    }else{
+      colnames(new_count) <- unlist(lapply(1:n_cell_type, function(x){
+        rep(names(model_params)[x], n_cell_each[x])}))
+    }
     return(new_count)
   }else if(reseq_method == 'multinomial'){
     for(iter in 1:n_cell_type){
@@ -237,7 +254,12 @@ simulate_count_multi_cell_type <- function(model_params, total_count_new, n_cell
                        replace = TRUE, prob = as.vector(new_count))
     hist_result <- hist(bam_file, breaks = 0:(n_cell_new*p), plot = FALSE)
     result <- matrix(hist_result$counts, nrow = nrow(new_count))
-    colnames(result) <- unlist(lapply(1:n_cell_type, function(x){rep(x, n_cell_each[x])}))
+    if(is.null(names(model_params))){
+      colnames(result) <- unlist(lapply(1:n_cell_type, function(x){rep(x, n_cell_each[x])}))
+    }else{
+      colnames(result) <- unlist(lapply(1:n_cell_type, function(x){
+        rep(names(model_params)[x], n_cell_each[x])}))
+    }
     return(result)
   }
 }

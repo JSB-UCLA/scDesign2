@@ -188,7 +188,7 @@ fit_marginals <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'poisson'
 #' (w/o copula) model.}
 #' }
 #'
-#' @export
+# @export
 fit_Gaussian_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'poisson'),
                                 jitter = TRUE, zp_cutoff = 0.8,
                                 min_nonzero_num = 2){
@@ -223,7 +223,7 @@ fit_Gaussian_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'po
               marginal_param2 = marginal_result2$params,
               gene_sel1 = gene_sel1, gene_sel2 = gene_sel2, gene_sel3 = gene_sel3,
               zp_cutoff = zp_cutoff, min_nonzero_num = min_nonzero_num,
-              sim_method = 'copula'))
+              sim_method = 'copula', n_cell = n, n_read = sum(x)))
 }
 
 
@@ -250,7 +250,7 @@ fit_Gaussian_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'po
 #' distinguished with the copula model.}
 #' }
 #'
-#' @export
+# @export
 fit_wo_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'poisson'),
                           jitter = TRUE, min_nonzero_num = 2){
   marginal <- match.arg(marginal)
@@ -272,7 +272,8 @@ fit_wo_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'poisson'
 
   return(list(marginal_param1 = marginal_result1$params,
               gene_sel1 = gene_sel1, gene_sel2 = gene_sel2,
-              min_nonzero_num = min_nonzero_num, sim_method = 'ind'))
+              min_nonzero_num = min_nonzero_num, sim_method = 'ind',
+              n_cell = n, n_read = sum(x)))
 }
 
 
@@ -294,12 +295,17 @@ fit_wo_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'poisson'
 #' as each of its element.
 #'
 #' @export
-fit_model_multi_cell_type <- function(data_mat, cell_type_sel, sim_method = c('copula', 'ind'),
-                                      marginal = c('auto_choose', 'zinb', 'nb', 'poisson'),
-                                      jitter = TRUE, zp_cutoff = 0.8,
-                                      min_nonzero_num = 2, ncores = 1){
+fit_model_scDesign2 <- function(data_mat, cell_type_sel, sim_method = c('copula', 'ind'),
+                                marginal = c('auto_choose', 'zinb', 'nb', 'poisson'),
+                                jitter = TRUE, zp_cutoff = 0.8,
+                                min_nonzero_num = 2, ncores = 1){
   sim_method <- match.arg(sim_method)
   marginal <- match.arg(marginal)
+
+  if(sum(abs(data_mat - round(data_mat))) > 1e-5){
+    warning('The entries in the input matrix are not integers. Rounding is performed.')
+    data_mat <- round(data_mat)
+  }
 
   if(sim_method == 'copula'){
     param <- mclapply(1:length(cell_type_sel), function(iter){
