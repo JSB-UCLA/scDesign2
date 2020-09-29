@@ -15,3 +15,7 @@ Imports:
     MASS,
     parallel,
     pscl
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr

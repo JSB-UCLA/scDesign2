@@ -1,0 +1,46 @@
+---
+title: "scDesign2 package manual"
+author: "Tianyi Sun"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{scDesign2 package manual}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(scDesign2)
+```
+
+
+```{r read data}
+data_mat <- readRDS(system.file("extdata", "mouse_sie_10x.rds", package = "scDesign2"))
+dim(data_mat)
+table(colnames(data_mat))
+```
+
+```{r fit and simulate for a single cell type,eval=FALSE}
+set.seed(1)
+copula_result <- fit_model_scDesign2(data_mat, 'Stem', sim_method = 'copula')
+```
+
+```{r load fitted result}
+# copula_result <- readRDS(system.file("extdata", "copula_result_Stem_mouse_sie_10x.rds", package = "scDesign2"))
+```
+
+
+
+
+
+
+
+
+
