@@ -29,10 +29,12 @@ In this manual, we will demonstrate how to use scDesign2 by guiding you through 
 Before we dive into the three tasks, some preparations is needed. First, we need to load the following packages into R.
 ```{r setup}
 library(scDesign2)
-library(copula)   # corKendall
+library(copula)    # corKendall
 library(Rtsne)
-library(plyr)     # mapvalues
-library(reshape2) # melt
+library(plyr)      # mapvalues
+library(reshape2)  # melt
+library(gridExtra) # arrange plots
+library(ggpubr)
 library(ggplot2); theme_set(theme_bw());
 ```
 
@@ -258,11 +260,11 @@ Rtsne_copula <- Rtsne(log(t(sim_count_copula)+1))
 save(Rtsne_test, Rtsne_train, Rtsne_copula, file = 'tsne_comparison_multi_type_demo.rda')
 
 # perform PCA ---------------------------------------------------------------------------
-pca_test <- prcomp(t(testcount_sel))
+pca_test <- prcomp(log(t(testcount_sel)+1))
 test_trans <- pca_test$x[, 1:2]
-train_trans <- scale(t(traincount_sel), center = pca_test$center,
+train_trans <- scale(log(t(traincount_sel)+1), center = pca_test$center,
                      scale = FALSE) %*% pca_test$rotation[, 1:2]
-scDesign2_trans <- scale(t(sim_count_copula), center = pca_test$center,
+scDesign2_trans <- scale(log(t(sim_count_copula)+1), center = pca_test$center,
                          scale = FALSE) %*% pca_test$rotation[, 1:2]
 save(test_trans, train_trans, scDesign2_trans,
      file = paste0('pca_comparison_multi_type_demo.rda'))
@@ -279,28 +281,33 @@ load(system.file("extdata", 'tsne_comparison_multi_type_demo.rda', package = "sc
 load(system.file("extdata", 'pca_comparison_multi_type_demo.rda', package = "scDesign2"))
 ```
 
-```{r dimensionality reduction plots,fig.width=7,fig.height=3,fig.align='center'}
+```{r dimensionality reduction plots,fig.width=7,fig.height=5.5,fig.align='center'}
+# simplify cell type names for display on plot
 cell_type_sel_short <- c("Stem", "Goblet", "Tuft", "TA.Early", "EP", "EP.Early")
-tsne_dat <- data.frame(rbind(Rtsne_train$Y, Rtsne_test$Y, Rtsne_copula$Y))
-colnames(tsne_dat) <- c('x', 'y')
-col_names_test <- as.numeric(factor(colnames(testcount_sel), levels = cell_type_sel))
-col_names_train <- as.numeric(factor(colnames(traincount_sel), levels = cell_type_sel))
-# col_names_copula <- as.numeric(factor(colnames(sim_count_copula), levels = cell_type_sel))
-col_names_copula <- as.numeric(colnames(sim_count_copula))
-tsne_dat$labels <- c(col_names_train, col_names_test, col_names_copula)
-tsne_dat$labels <- factor(tsne_dat$labels, levels = 1:length(cell_type_sel))
-tsne_dat$labels <- mapvalues(tsne_dat$labels, from = levels(tsne_dat$labels),
-                             to = cell_type_sel_short)
-tsne_dat$panels <- factor(c(rep('training data', ncol(traincount_sel)),
-                            rep('test data', ncol(testcount_sel)),
-                            rep('scDesign2', ncol(sim_count_copula))),
-                          levels = c('training data', 'test data', 'scDesign2'))
 
-cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2")
-names(cbPalette) <- levels(tsne_dat$labels)
-colScale <- scale_colour_manual(name = "labels",values = cbPalette)
+# a function for converting dim reduction results as input to ggplot2 -------------------
+get_dim_red_dat <- function(dim_red_result){
+  dim_red_dat <- data.frame(Reduce(rbind, dim_red_result))
+  colnames(dim_red_dat) <- c('x', 'y')
+  dim_red_dat$labels <- factor(c(colnames(traincount_sel), colnames(testcount_sel),
+                                 colnames(sim_count_copula)), levels = cell_type_sel)
+  dim_red_dat$labels <- mapvalues(dim_red_dat$labels, from = levels(dim_red_dat$labels),
+                                  to = cell_type_sel_short)
+  dim_red_dat$panels <- factor(c(rep('training data', ncol(traincount_sel)),
+                                 rep('test data', ncol(testcount_sel)),
+                                 rep('scDesign2', ncol(sim_count_copula))),
+                               levels = c('training data', 'test data', 'scDesign2'))
+  return(dim_red_dat)
+}
 
-tsne_plot <- ggplot(tsne_dat, aes(x = x, y = y, color = labels)) +
+# a function for drawing dim reduction plots --------------------------------------------
+get_dim_red_plot <- function(dim_red_dat, xylab, plot_legend = FALSE){
+  cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2")
+  names(cbPalette) <- levels(dim_red_dat$labels)
+  colScale <- scale_colour_manual(name = "labels",values = cbPalette)
+  
+  legend_pos <- if(plot_legend) 'right' else 'none'
+  dim_red_plot <- ggplot(dim_red_dat, aes(x = x, y = y, color = labels)) +
       geom_point(cex = 0.5, alpha = 0.8) +
       facet_wrap(~panels, nrow = 1) +
       theme(strip.background = element_blank(),
@@ -309,12 +316,35 @@ tsne_plot <- ggplot(tsne_dat, aes(x = x, y = y, color = labels)) +
             strip.text = element_text(size=15),
             axis.title = element_text(size=12),
             axis.text = element_text(size = 10),
+            legend.position = legend_pos,
             legend.title = element_blank(),
             legend.text = element_text(size=12),
-            legend.key.size = unit(1.4, 'lines')) +
-      xlab('t-SNE 1') + ylab('t-SNE 2') + colScale +
+            legend.key.size = unit(1.2, 'lines')) +
+      xlab(xylab[1]) + ylab(xylab[2]) + colScale +
   guides(color = guide_legend(override.aes = list(size = 3)))
-print(tsne_plot)
+  return(dim_red_plot)
+}
+
+# a function for getting plot legends ---------------------------------------------------
+get_legend<-function(myggplot){
+  tmp <- ggplot_gtable(ggplot_build(myggplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+# get dat and create dim reduction plots ------------------------------------------------
+tsne_dat <- get_dim_red_dat(list(Rtsne_train$Y, Rtsne_test$Y, Rtsne_copula$Y))
+pca_dat <- get_dim_red_dat(list(train_trans, test_trans, scDesign2_trans))
+
+tsne_plot <- get_dim_red_plot(tsne_dat, c('t-SNE 1', 't-SNE 2'))
+pca_plot <- get_dim_red_plot(pca_dat, c('test data PC 1', 'test data PC 2'))
+legend_plot <- get_legend(
+  get_dim_red_plot(tsne_dat, c('t-SNE 1', 't-SNE 2'), plot_legend = TRUE))
+
+dim_red_plot <- arrangeGrob(arrangeGrob(tsne_plot, pca_plot, heights = c(1, 1)),
+                            legend_plot, widths = c(3, 0.5))
+print(as_ggplot(dim_red_plot))
 ```
 
 
