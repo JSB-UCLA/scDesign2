@@ -1,3 +1,5 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
 pkg_testing.R
+^doc$
+^Meta$

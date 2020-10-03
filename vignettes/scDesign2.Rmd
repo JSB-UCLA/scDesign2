@@ -2,39 +2,322 @@
 title: "scDesign2 package manual"
 author: "Tianyi Sun"
 date: "`r Sys.Date()`"
-output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{scDesign2 package manual}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
+output: 
+  html_vignette
 ---
 
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>",
+  warning = FALSE,
+  message = FALSE
 )
 ```
 
+# Introduction
+scDesign2 is an interpretable simulator that generates realistic single-cell gene expression count data with gene correlations captured. It achieves this goal by fitting a probabilistic model to each cell type. The fitting of the model not only characterizes the marginal distribution of each gene, but also captures the correlations among genes through the fitting of a Gaussian copula model. In addition, scDesign2 can simulate data with varying number of cells and sequencing depths, facillitating the design of single-cell gene expression experiments and the benchmarking of data analysis methods.
+
+In this manual, we will demonstrate how to use scDesign2 by guiding you through three tasks: (1) Fitting to data of a single cell type, (2) Fitting to data of multiple cell types, and (3) Generating data with varying cell numbers and sequencing depths to help choose the optimal design of experiment and cell clustering methods.
+
+
+# Preparations
+Before we dive into the three tasks, some preparations is needed. First, we need to load the following packages into R.
 ```{r setup}
 library(scDesign2)
+library(copula)   # corKendall
+library(Rtsne)
+library(plyr)     # mapvalues
+library(reshape2) # melt
+library(ggplot2); theme_set(theme_bw());
 ```
 
-
-```{r read data}
+Then, we will load an example dataset for our tasks. The chosen dataset is a single cell RNA-seq dataset that profiles the transcriptome of mouse small intestinal epithelium. The GEO number for this dataset is GSE92332.
+```{r load data and preprocessing}
+# load data -----------------------------------------------------------------------------
 data_mat <- readRDS(system.file("extdata", "mouse_sie_10x.rds", package = "scDesign2"))
+
+# remove spike-in -----------------------------------------------------------------------
+nonspikes = which(!grepl("ercc", rownames(data_mat), ignore.case = TRUE))
+print(paste("number of spike-ins:", nrow(data_mat)-length(nonspikes)))
+data_mat = data_mat[nonspikes, ,drop = FALSE]
+
+# explore basic structure of data -------------------------------------------------------
 dim(data_mat)
 table(colnames(data_mat))
 ```
 
-```{r fit and simulate for a single cell type,eval=FALSE}
+From the above output, we can see that there are `r dim(data_mat)[1]` genes and `r dim(data_mat)[2]` cells in this dataset. scDesign2 requires that for the input data, each row should represent a gene, each column a cell, and each cell (column) is labelled with the cell type that it belongs to. This requirement is met by the above loaded dataset.
+
+Next, for a fair comparison, we will split the dataset into a training set and a test set. Only the training set will be used for model fitting. The test set will be used for evaluation, but results for the training set will also be included to demonstrate the variation between the training and test sets.
+```{r split data into train and test sets}
+unique_cell_type <- names(table(colnames(data_mat)))
 set.seed(1)
-copula_result <- fit_model_scDesign2(data_mat, 'Stem', sim_method = 'copula')
+train_idx <- unlist(sapply(unique_cell_type, function(x){
+  cell_type_idx <- which(colnames(data_mat) == x)
+  n_cell_total <- length(cell_type_idx)
+  sample(cell_type_idx, floor(n_cell_total/2))
+}))
+traincount <- data_mat[, train_idx]
+testcount <- data_mat[, -train_idx]
 ```
 
-```{r load fitted result}
-# copula_result <- readRDS(system.file("extdata", "copula_result_Stem_mouse_sie_10x.rds", package = "scDesign2"))
+Since in model fitting, we use the `mclappy()` function, for reproducibility, we need to change the random number generator in the following way. (More about this in [here](https://bookdown.org/rdpeng/rprogdatascience/parallel-computation.html#mclapply))
+```{r set RNG}
+RNGkind("L'Ecuyer-CMRG")
 ```
+
+Finally, a warning before we proceed: the code for model fitting and data generation can be time-consuming to run. Therefore, we suggest that users should wrap the relevant code into an R script and run it in the background in the command line. If you use a *nix operating system, you can do something like this: `nohup R CMD BATCH script.R &`, where `script.R` is a file that contains the code for data analysis and saving of important results, like the fitted model and the simulated data.
+
+# Task 1: Fit and simulate for a single cell type
+Our first task is to use scDesign2 to fit and simulate data for a single cell type. Here we choose the `'Stem'` type in the loaded dataset, but any cell type can be tested.
+
+To do this task, we can simply call two functions successively: `fit_model_to_cell_type()` for model fitting, and `simulate_count_regular()` for data simulation. The two most important arguments for `fit_model_to_cell_type()` is the input data matrix, and a character string that indicates which cell type(s) we want to fit to. The two most important arguments for `simulate_count_regular()` is the fitted model, which is just the object returned by `fit_model_to_cell_type()`, and `n_cell_new`, which can be any positive integer.
+
+```{r fit and simulate for a single cell type,eval=FALSE}
+# set function parameter values ---------------------------------------------------------
+n_cell_new <- ncol(testcount[, colnames(testcount) == 'Stem'])
+
+# fit model and simulate data -----------------------------------------------------------
+set.seed(1)
+copula_result <- fit_model_to_cell_type(traincount, 'Stem', sim_method = 'copula')
+sim_count_copula <- simulate_count_regular(copula_result, n_cell_new, sim_method = 'copula')
+
+# save the model parameters and the simulated data --------------------------------------
+saveRDS(copula_result, file = 'copula_result_Stem_demo.rds')
+saveRDS(sim_count_copula, file = 'sim_count_copula_Stem_demo.rds')
+```
+
+```{r load simulated data,include=FALSE}
+sim_count_copula <-
+  readRDS(system.file("extdata", "sim_count_copula_Stem_demo.rds", package = "scDesign2"))
+```
+
+
+To see how well the simulated data can mimic real data, we will do the following two types of evaluations: (1) Evaluation of the fitting of the marginal distributions, and (2) Evaluation of the characterization of the gene correlations. To evaluate the fitting of the marginal distributions, we will calculate some key gene-wise and cell-wise summary statistics, and compare the distribution of these summary statistics between real data and simulated data.
+
+```{r comparing marginal stats,fig.width=7,fig.height=5,fig.align='center'}
+# a function for computing the marginal stats -------------------------------------------
+get_stats <- function(mat, group, log_trans = TRUE){
+  mean <- rowMeans(mat)
+  var <- apply(mat,1,var)
+  cv <- sqrt(var)/mean
+  zero_gene <- rowSums(mat < 1e-5)/ncol(mat)
+  zero_cell <- colSums(mat < 1e-5)/nrow(mat)
+  libsize <- colSums(mat)
+  
+  if(log_trans){
+    mean <- log10(mean + 1)
+    var <- log10(var + 1)
+    libsize <- log10(libsize + 1)
+  }
+  
+  summs <- list(mean = mean, var = var, cv = cv, drop_gene = zero_gene,
+                drop_cell = zero_cell, libsize = libsize)
+  summs = lapply(1:length(summs), function(i){
+    data.frame(value = summs[[i]], measure = names(summs)[i], group = group,
+               stringsAsFactors = FALSE)
+  })
+  summs = Reduce(rbind, summs)
+  return(summs)
+}
+
+# subset traincount and testcount to include only the selected cell type ----------------
+traincount_sel <- traincount[, colnames(traincount) == 'Stem']
+testcount_sel <- testcount[, colnames(testcount) == 'Stem']
+# compute the marginal stats ------------------------------------------------------------
+stats_train <- get_stats(traincount_sel, 'train')
+stats_test <- get_stats(testcount_sel, 'test')
+stats_scDesign2 <- get_stats(sim_count_copula, 'scDesign2')
+
+# organize the stat values as input for ggplot2 -----------------------------------------
+stats_dat <- rbind(stats_train, stats_test, stats_scDesign2)
+stats_dat$group <- factor(stats_dat$group, levels = c('train', 'test', 'scDesign2'))
+measures1 <-  c("mean", "var", "cv", "drop_gene",
+                "drop_cell", "libsize")
+measures2 <-  c("gene mean", "gene variance", "gene cv",
+                "gene zero prop.", "cell zero prop.", "cell library size")
+stats_dat$measure <- factor(stats_dat$measure, levels = measures1)
+stats_dat$measure <- mapvalues(stats_dat$measure, from = measures1, to = measures2)
+
+# create violin-plots to compare the marginal stat values -------------------------------
+stats_plot <- ggplot(stats_dat, aes(x = group, y = value)) +
+  geom_violin(scale = 'width', trim = TRUE) +
+  facet_wrap(~measure, scales = "free", ncol = 3) +
+  theme(strip.text = element_text(size=15),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("") + ylab("")
+print(stats_plot)
+```
+
+From the above violin-plots, we can see that the distribution of the key summary statistics of the simulated data by scDesign2 is very similar to the real data (the test data and the training data).
+
+Next, we will evaluate how well scDesign2 can capture gene correlations. To do this, we will compare the correlation heatmaps among the highly expressed genes between the simulated data and real data. Two types of correlations are considered, Pearson correlation and Kendall's tau. Pearson correlation is used since it's the most commonly used type of correlation. Kendall's tau is chosen because it is a rank based correlation that accounts for ties, which is more suitable for count data.
+
+```{r comparing correlations,fig.width=7,fig.height=5,fig.align='center'}
+# select the top 100 highly expressed genes ---------------------------------------------
+gene_mean <- apply(testcount_sel, 1, mean)
+cutoff <- 100
+gene_sel <- order(gene_mean, decreasing = TRUE)[1:cutoff]
+
+# two functions for calculating the correlation matrix(-ces) of selected genes ----------
+get_cor_mat <- function(x, cor_fun){
+  sub_mat <- x[gene_sel, ]
+  cor_fun(t(sub_mat))
+}
+get_heatmap_dat <- function(mat_list, cor_fun){
+  cor_mat_list <- lapply(mat_list, get_cor_mat, cor_fun)
+  # reorder cor_mat entries according to hierarchical clustering result
+  cor_mat_list <- lapply(cor_mat_list, function(x){
+    x[hclust_result$order, hclust_result$order]})
+  # organize the cor values as input for ggplot2
+  cor_melted <- lapply(cor_mat_list, melt)
+  cor_dat <- Reduce(rbind, cor_melted)
+  cor_dat$group <- unlist(lapply(1:length(group_list), function(x){
+    rep(group_list[[x]], nrow(cor_melted[[x]]))
+  }))
+  return(cor_dat)
+}
+
+# calculate the correlations and organize as input for ggplot2 --------------------------
+rownames(sim_count_copula) <- rownames(traincount)
+mat_list <- list(train = traincount_sel, test = testcount_sel, scDesign2 = sim_count_copula)
+hclust_result <- hclust(as.dist(1-get_cor_mat(mat_list$test, cor)))
+group_list <- c('training data', 'test data', 'scDesign2')
+
+cor_dat <- get_heatmap_dat(mat_list, cor)
+tau_dat <- get_heatmap_dat(mat_list, corKendall)
+
+cor_tau_dat <- rbind(cor_dat, tau_dat)
+cor_tau_dat$group <- factor(cor_tau_dat$group, levels = group_list)
+cor_tau_dat$cor_type <- factor(c(rep('Pearson\nCorrelation', nrow(cor_dat)),
+                                 rep('Kendall\'s\ntau', nrow(tau_dat))),
+                               levels = c('Pearson\nCorrelation', 'Kendall\'s\ntau'))
+
+# create heatmaps to display the correlation values -------------------------------------
+cor_tau_plot <- ggplot(cor_tau_dat, aes(Var2, Var1, fill = value))+
+  facet_grid(vars(cor_type), vars(group)) + 
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                       midpoint = 0, limit = c(-1,1), space = "Lab",
+                       name="") +
+  theme(strip.background = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        strip.text = element_text(size=15)) +
+  xlab("") + ylab("") + coord_fixed()
+print(cor_tau_plot)
+```
+From the above heatmaps, we can see that the correlation patterns of the simulated data by scDesign2 is very similar to the patterns from real data (test data and training data).
+
+
+# Task 2: Fit and simulate for multiple cell types
+Our second task is to use scDesign2 to fit and simulate data for multiple cell types. Here we choose six cell types as an example.
+
+To do this task, we use the same two functions as in task 1: `fit_model_to_cell_type()` for model fitting, and `simulate_count_regular()`. The syntax for calling these two functions are almost the same as before, with two exceptions. First, since model fitting is performed separately for each cell type, they can be run in parallel, which can be achieved by specifying the `ncores` argument in `fit_model_to_cell_type()` to be larger than 1. Second, when simulating new data, the `cell_type_prop` argument needs to be specified to indicate the cell type proportions in the new data. It should take a numeric vector with the same length as the number of cell types selected.
+
+```{r fit and simulate for multiple cell type,eval=FALSE}
+# set function parameter values ---------------------------------------------------------
+cell_type_sel <- c("Stem", "Goblet", "Tuft", "TA.Early",
+                   "Enterocyte.Progenitor", "Enterocyte.Progenitor.Early")
+n_cell_new <- ncol(testcount[, colnames(testcount) %in% cell_type_sel])
+cell_type_prop <- table(colnames(testcount))[cell_type_sel]
+
+# fit model and simulate data -----------------------------------------------------------
+set.seed(1)
+copula_result <- fit_model_to_cell_type(traincount, cell_type_sel, sim_method = 'copula',
+                                        ncores = length(cell_type_sel))
+sim_count_copula <- simulate_count_regular(copula_result, n_cell_new, sim_method = 'copula',
+                                           cell_type_prop = cell_type_prop)
+
+# save the model parameters and the simulated data --------------------------------------
+saveRDS(copula_result, file = 'copula_result_multi_type_demo.rds')
+saveRDS(sim_count_copula, file = 'sim_count_copula_multi_type_demo.rds')
+```
+
+To see how well the simulated data can mimic real data, we will compare the dimensionality reduction results between the simulated data and real data by drawing t-SNE and PCA plots.
+
+```{r dimensionality reduction,eval=FALSE}
+traincount_sel <- traincount[, colnames(traincount) %in% cell_type_sel]
+testcount_sel <- testcount[, colnames(testcount) %in% cell_type_sel]
+
+# perform t-SNE -------------------------------------------------------------------------
+set.seed(1)
+Rtsne_test <- Rtsne(log(t(testcount_sel)+1))
+Rtsne_train <- Rtsne(log(t(traincount_sel)+1))
+Rtsne_copula <- Rtsne(log(t(sim_count_copula)+1))
+save(Rtsne_test, Rtsne_train, Rtsne_copula, file = 'tsne_comparison_multi_type_demo.rda')
+
+# perform PCA ---------------------------------------------------------------------------
+pca_test <- prcomp(t(testcount_sel))
+test_trans <- pca_test$x[, 1:2]
+train_trans <- scale(t(traincount_sel), center = pca_test$center,
+                     scale = FALSE) %*% pca_test$rotation[, 1:2]
+scDesign2_trans <- scale(t(sim_count_copula), center = pca_test$center,
+                         scale = FALSE) %*% pca_test$rotation[, 1:2]
+save(test_trans, train_trans, scDesign2_trans,
+     file = paste0('pca_comparison_multi_type_demo.rda'))
+```
+
+```{r load dim. reduction results,include=FALSE}
+cell_type_sel <- c("Stem", "Goblet", "Tuft", "TA.Early",
+                   "Enterocyte.Progenitor", "Enterocyte.Progenitor.Early")
+traincount_sel <- traincount[, colnames(traincount) %in% cell_type_sel]
+testcount_sel <- testcount[, colnames(testcount) %in% cell_type_sel]
+sim_count_copula <-
+  readRDS(system.file("extdata", "sim_count_copula_multi_type_demo.rds", package = "scDesign2"))
+load(system.file("extdata", 'tsne_comparison_multi_type_demo.rda', package = "scDesign2"))
+load(system.file("extdata", 'pca_comparison_multi_type_demo.rda', package = "scDesign2"))
+```
+
+```{r dimensionality reduction plots,fig.width=7,fig.height=3,fig.align='center'}
+cell_type_sel_short <- c("Stem", "Goblet", "Tuft", "TA.Early", "EP", "EP.Early")
+tsne_dat <- data.frame(rbind(Rtsne_train$Y, Rtsne_test$Y, Rtsne_copula$Y))
+colnames(tsne_dat) <- c('x', 'y')
+col_names_test <- as.numeric(factor(colnames(testcount_sel), levels = cell_type_sel))
+col_names_train <- as.numeric(factor(colnames(traincount_sel), levels = cell_type_sel))
+# col_names_copula <- as.numeric(factor(colnames(sim_count_copula), levels = cell_type_sel))
+col_names_copula <- as.numeric(colnames(sim_count_copula))
+tsne_dat$labels <- c(col_names_train, col_names_test, col_names_copula)
+tsne_dat$labels <- factor(tsne_dat$labels, levels = 1:length(cell_type_sel))
+tsne_dat$labels <- mapvalues(tsne_dat$labels, from = levels(tsne_dat$labels),
+                             to = cell_type_sel_short)
+tsne_dat$panels <- factor(c(rep('training data', ncol(traincount_sel)),
+                            rep('test data', ncol(testcount_sel)),
+                            rep('scDesign2', ncol(sim_count_copula))),
+                          levels = c('training data', 'test data', 'scDesign2'))
+
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2")
+names(cbPalette) <- levels(tsne_dat$labels)
+colScale <- scale_colour_manual(name = "labels",values = cbPalette)
+
+tsne_plot <- ggplot(tsne_dat, aes(x = x, y = y, color = labels)) +
+      geom_point(cex = 0.5, alpha = 0.8) +
+      facet_wrap(~panels, nrow = 1) +
+      theme(strip.background = element_blank(),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            strip.text = element_text(size=15),
+            axis.title = element_text(size=12),
+            axis.text = element_text(size = 10),
+            legend.title = element_blank(),
+            legend.text = element_text(size=12),
+            legend.key.size = unit(1.4, 'lines')) +
+      xlab('t-SNE 1') + ylab('t-SNE 2') + colScale +
+  guides(color = guide_legend(override.aes = list(size = 3)))
+print(tsne_plot)
+```
+
+
 
 
 

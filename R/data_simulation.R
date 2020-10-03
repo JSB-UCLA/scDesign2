@@ -192,9 +192,13 @@ simulate_count_regular <- function(model_params, n_cell_new,
         new_count[, llim:ulim] <-
         simulate_count_ind(params_new, n = n_cell_each[iter], marginal = 'nb')
     }
-  colnames(new_count) <- unlist(lapply(1:n_cell_type, function(x){rep(x, n_cell_each[x])}))
+  if(is.null(names(model_params))){
+    colnames(new_count) <- unlist(lapply(1:n_cell_type, function(x){rep(x, n_cell_each[x])}))
+  }else{
+    colnames(new_count) <- unlist(lapply(1:n_cell_type, function(x){
+      rep(names(model_params)[x], n_cell_each[x])}))
+  }
   new_count
-
 }
 
 
