@@ -351,6 +351,7 @@ dim_red_plot <- arrangeGrob(arrangeGrob(tsne_plot, pca_plot, heights = c(1, 1)),
                             legend_plot, widths = c(3, 0.5))
 print(as_ggplot(dim_red_plot))
 ```
+
 From the above dimensionality reduction plots, we can see that the patterns of the simulated data by scDesign2 is generally similar to the patterns from real data (test data and training data). One major inconsistency is that the "four cell types cloud" in real data are splitted into two chunks, while the scDesign2 simulated data only appear in one chunk. This suggests inhomogeneity among those four cell types in real data, and better results could be achieved by further dividing those four cell types into two groups each, and then fitting and simulating to each of these subtypes.
 
 The above analysis indicates that in this multiple cell types case, the simulated data by scDesign2 can also mimic real data to a decent extent.
