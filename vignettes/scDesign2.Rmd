@@ -20,21 +20,21 @@ knitr::opts_chunk$set(
 ```
 
 # Introduction
-scDesign2 is an interpretable simulator that generates realistic single-cell gene expression count data with gene correlations captured. It achieves this goal by fitting a probabilistic model to each cell type. The fitting of the model not only characterizes the marginal distribution of each gene, but also captures the correlations among genes through the fitting of a Gaussian copula model. In addition, scDesign2 can simulate data with varying number of cells and sequencing depths, facillitating the design of single-cell gene expression experiments and the benchmarking of data analysis methods.
+scDesign2 is an interpretable simulator that generates realistic single-cell gene expression count data with gene correlations captured. It achieves this goal by fitting a probabilistic model to each cell type. The fitted model not only characterizes the marginal distribution of each gene, but also captures the correlations among genes through the fitting of a Gaussian copula distribution. In addition, scDesign2 can simulate data with varying number of cells and sequencing depths, facillitating the design of single-cell gene expression experiments and the benchmarking of data analysis methods.
 
-In this manual, we will demonstrate how to use scDesign2 by guiding you through three tasks: (1) Fitting to data of a single cell type, (2) Fitting to data of multiple cell types, and (3) Generating data with varying cell numbers and sequencing depths to help choose the optimal design of experiment and cell clustering methods.
+In this manual, we will demonstrate how to use scDesign2 by guiding you through three tasks: (1) Fitting to data of a single cell type, (2) Fitting to data of multiple cell types, and (3) Generating data with varying cell numbers and sequencing depths to guide the optimal design of experiment and choice of cell clustering methods.
 
 
 # Preparations
-Before we dive into the three tasks, some preparations is needed. First, we need to load the following packages into R.
+Before we dive into the three tasks, some preparations are needed. First, we need to load the following packages into R.
 ```{r setup}
 library(scDesign2)
 library(copula)    # corKendall
 library(Rtsne)
 library(plyr)      # mapvalues
 library(reshape2)  # melt
-library(gridExtra) # arrange plots
-library(ggpubr)
+library(gridExtra) # arrangeGrob
+library(ggpubr)    # as_ggplot
 library(ggplot2); theme_set(theme_bw());
 ```
 
@@ -44,16 +44,16 @@ Then, we will load an example dataset for our tasks. The chosen dataset is a sin
 data_mat <- readRDS(system.file("extdata", "mouse_sie_10x.rds", package = "scDesign2"))
 
 # remove spike-in -----------------------------------------------------------------------
-nonspikes = which(!grepl("ercc", rownames(data_mat), ignore.case = TRUE))
+nonspikes <- which(!grepl("ercc", rownames(data_mat), ignore.case = TRUE))
 print(paste("number of spike-ins:", nrow(data_mat)-length(nonspikes)))
-data_mat = data_mat[nonspikes, ,drop = FALSE]
+data_mat <- data_mat[nonspikes, ,drop = FALSE]
 
 # explore basic structure of data -------------------------------------------------------
 dim(data_mat)
 table(colnames(data_mat))
 ```
 
-From the above output, we can see that there are `r dim(data_mat)[1]` genes and `r dim(data_mat)[2]` cells in this dataset. scDesign2 requires that for the input data, each row should represent a gene, each column a cell, and each cell (column) is labelled with the cell type that it belongs to. This requirement is met by the above loaded dataset.
+**scDesign2 requires that for the input gene expression matrix, each row should represent a gene, each column a cell, and each cell (column) is labelled with the cell type that it belongs to. Also, the entries in the input matrix should be count values (integers). Otherwise, rounding should be performed.** These requirements are met by the above loaded dataset. As can be seen from the above output, there are `r dim(data_mat)[1]` genes, `r dim(data_mat)[2]` cells, and a total of `r length(table(colnames(data_mat)))` cell types in this dataset.
 
 Next, for a fair comparison, we will split the dataset into a training set and a test set. Only the training set will be used for model fitting. The test set will be used for evaluation, but results for the training set will also be included to demonstrate the variation between the training and test sets.
 ```{r split data into train and test sets}
@@ -68,17 +68,17 @@ traincount <- data_mat[, train_idx]
 testcount <- data_mat[, -train_idx]
 ```
 
-Since in model fitting, we use the `mclappy()` function, for reproducibility, we need to change the random number generator in the following way. (More about this in [here](https://bookdown.org/rdpeng/rprogdatascience/parallel-computation.html#mclapply))
+Since in model fitting, we will use the `mclappy()` function, for reproducibility, we need to change the random number generator in the following way. (More about this in [here](https://bookdown.org/rdpeng/rprogdatascience/parallel-computation.html#mclapply))
 ```{r set RNG}
 RNGkind("L'Ecuyer-CMRG")
 ```
 
-Finally, a warning before we proceed: the code for model fitting and data generation can be time-consuming to run. Therefore, we suggest that users should wrap the relevant code into an R script and run it in the background in the command line. If you use a *nix operating system, you can do something like this: `nohup R CMD BATCH script.R &`, where `script.R` is a file that contains the code for data analysis and saving of important results, like the fitted model and the simulated data.
+Finally, a warning before we proceed: the code for model fitting and data generation can be time consuming to run. Therefore, we suggest that users should wrap the relevant code into an R script and run it in the background from the OS command line. If you use a *nix operating system, you can do something like this: `nohup R CMD BATCH script.R &`, where `script.R` is a file that contains the code for model fitting and data generation, and saving of the fitted model and the simulated data.
 
 # Task 1: Fit and simulate for a single cell type
 Our first task is to use scDesign2 to fit and simulate data for a single cell type. Here we choose the `'Stem'` type in the loaded dataset, but any cell type can be tested.
 
-To do this task, we can simply call two functions successively: `fit_model_to_cell_type()` for model fitting, and `simulate_count_regular()` for data simulation. The two most important arguments for `fit_model_to_cell_type()` is the input data matrix, and a character string that indicates which cell type(s) we want to fit to. The two most important arguments for `simulate_count_regular()` is the fitted model, which is just the object returned by `fit_model_to_cell_type()`, and `n_cell_new`, which can be any positive integer.
+To do this task, we can simply call two functions successively: `fit_model_to_cell_type()` for model fitting, and `simulate_count_regular()` for data simulation. The two most important arguments for `fit_model_to_cell_type()` is the input data matrix, and a character string that indicates which cell type(s) we want to fit to. The two most important arguments for `simulate_count_regular()` is the fitted model, which is just the object returned by `fit_model_to_cell_type()`, and `n_cell_new`, which can be any positive integer. Here, `n_cell_new` is set to the same as the number of cells of type `'Stem'` in the test data.
 
 ```{r fit and simulate for a single cell type,eval=FALSE}
 # set function parameter values ---------------------------------------------------------
@@ -100,7 +100,7 @@ sim_count_copula <-
 ```
 
 
-To see how well the simulated data can mimic real data, we will do the following two types of evaluations: (1) Evaluation of the fitting of the marginal distributions, and (2) Evaluation of the characterization of the gene correlations. To evaluate the fitting of the marginal distributions, we will calculate some key gene-wise and cell-wise summary statistics, and compare the distribution of these summary statistics between real data and simulated data.
+To see how well the simulated data can mimic real data, we will do the following two types of evaluations: (1) Evaluation of the fitting of the marginal distributions, and (2) Evaluation of the characterization of the gene correlations. To evaluate the fitting of the marginal distributions, we will calculate some key gene-wise and cell-wise summary statistics, and compare the distributions of these summary statistics between real data and simulated data.
 
 ```{r comparing marginal stats,fig.width=7,fig.height=5,fig.align='center'}
 # a function for computing the marginal stats -------------------------------------------
@@ -132,13 +132,13 @@ get_stats <- function(mat, group, log_trans = TRUE){
 traincount_sel <- traincount[, colnames(traincount) == 'Stem']
 testcount_sel <- testcount[, colnames(testcount) == 'Stem']
 # compute the marginal stats ------------------------------------------------------------
-stats_train <- get_stats(traincount_sel, 'train')
+stats_train <- get_stats(traincount_sel, 'training')
 stats_test <- get_stats(testcount_sel, 'test')
 stats_scDesign2 <- get_stats(sim_count_copula, 'scDesign2')
 
 # organize the stat values as input for ggplot2 -----------------------------------------
 stats_dat <- rbind(stats_train, stats_test, stats_scDesign2)
-stats_dat$group <- factor(stats_dat$group, levels = c('train', 'test', 'scDesign2'))
+stats_dat$group <- factor(stats_dat$group, levels = c('training', 'test', 'scDesign2'))
 measures1 <-  c("mean", "var", "cv", "drop_gene",
                 "drop_cell", "libsize")
 measures2 <-  c("gene mean", "gene variance", "gene cv",
@@ -159,9 +159,9 @@ stats_plot <- ggplot(stats_dat, aes(x = group, y = value)) +
 print(stats_plot)
 ```
 
-From the above violin-plots, we can see that the distribution of the key summary statistics of the simulated data by scDesign2 is very similar to the real data (the test data and the training data).
+From the above violin-plots, we can see that the distributions of the key summary statistics of the simulated data by scDesign2 are very similar to those of the real data (the test data and the training data).
 
-Next, we will evaluate how well scDesign2 can capture gene correlations. To do this, we will compare the correlation heatmaps among the highly expressed genes between the simulated data and real data. Two types of correlations are considered, Pearson correlation and Kendall's tau. Pearson correlation is used since it's the most commonly used type of correlation. Kendall's tau is chosen because it is a rank based correlation that accounts for ties, which is more suitable for count data.
+Next, we will evaluate how well scDesign2 can capture gene correlations. To do this, we will compare the correlation heatmaps among the highly expressed genes between the simulated data and real data. Two types of correlations are considered, Pearson correlation and Kendall's tau. Pearson correlation is used since it is the most commonly used type of correlation. Kendall's tau is chosen because it is a rank based correlation that accounts for ties, which is more suitable for count data.
 
 ```{r comparing correlations,fig.width=7,fig.height=5,fig.align='center'}
 # select the top 100 highly expressed genes ---------------------------------------------
@@ -221,13 +221,17 @@ print(cor_tau_plot)
 ```
 From the above heatmaps, we can see that the correlation patterns of the simulated data by scDesign2 is very similar to the patterns from real data (test data and training data).
 
+The above two sets of results serve as good verifications that in this single cell type case, the simulated data by scDesign2 can mimic real data very well.
+
 
 # Task 2: Fit and simulate for multiple cell types
 Our second task is to use scDesign2 to fit and simulate data for multiple cell types. Here we choose six cell types as an example.
 
-To do this task, we use the same two functions as in task 1: `fit_model_to_cell_type()` for model fitting, and `simulate_count_regular()`. The syntax for calling these two functions are almost the same as before, with two exceptions. First, since model fitting is performed separately for each cell type, they can be run in parallel, which can be achieved by specifying the `ncores` argument in `fit_model_to_cell_type()` to be larger than 1. Second, when simulating new data, the `cell_type_prop` argument needs to be specified to indicate the cell type proportions in the new data. It should take a numeric vector with the same length as the number of cell types selected.
+To do this task, we use the same two functions as in task 1: `fit_model_to_cell_type()` for model fitting, and `simulate_count_regular()`. The syntax for calling these two functions are almost the same as before, with two exceptions. First, since model fitting is performed separately for each cell type, they can be run in parallel, which can be achieved by specifying the `ncores` argument in `fit_model_to_cell_type()` to be larger than 1. Second, when simulating new data, the `cell_type_prop` argument needs to be specified to indicate the cell type proportions in the new data. It should take a numeric vector with the same length as the number of cell types selected. This vector doesn't need to be normalized to sum to 1. For our example, `n_cell_new` and `cell_type_prop` are set to be consistent with the test data.
 
-```{r fit and simulate for multiple cell type,eval=FALSE}
+One last detail is that for the `simulate_count_regular()` function, it has an argument called `cell_sample`, which can control whether the number of cells for each cell type should be sampled according to a multinomial distribution. To be consistent with the test data, we will leave it as the default value, `FALSE`.
+
+```{r fit and simulate for multiple cell types,eval=FALSE}
 # set function parameter values ---------------------------------------------------------
 cell_type_sel <- c("Stem", "Goblet", "Tuft", "TA.Early",
                    "Enterocyte.Progenitor", "Enterocyte.Progenitor.Early")
@@ -246,9 +250,10 @@ saveRDS(copula_result, file = 'copula_result_multi_type_demo.rds')
 saveRDS(sim_count_copula, file = 'sim_count_copula_multi_type_demo.rds')
 ```
 
-To see how well the simulated data can mimic real data, we will compare the dimensionality reduction results between the simulated data and real data by drawing t-SNE and PCA plots.
+To see how well the simulated data can mimic real data, we will project the simulated cells and real cells to low dimensional plots respectively, and check if they are similar to each other. We will compare both the t-SNE and PCA plots.
 
 ```{r dimensionality reduction,eval=FALSE}
+# subset traincount and testcount to include only the selected cell types ---------------
 traincount_sel <- traincount[, colnames(traincount) %in% cell_type_sel]
 testcount_sel <- testcount[, colnames(testcount) %in% cell_type_sel]
 
@@ -346,7 +351,7 @@ dim_red_plot <- arrangeGrob(arrangeGrob(tsne_plot, pca_plot, heights = c(1, 1)),
                             legend_plot, widths = c(3, 0.5))
 print(as_ggplot(dim_red_plot))
 ```
-
+From the above dimensionality reduction plots, we can see that the patterns of the simulated data by scDesign2 is very similar to the patterns from real data (test data and training data). This indicates that in this multiple cell types case, the simulated data by scDesign2 can also mimic real data very well.
 
 
 

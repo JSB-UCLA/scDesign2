@@ -157,6 +157,10 @@ simulate_count_ind <- function(model_params, n = 100,
 simulate_count_regular <- function(model_params, n_cell_new,
                                    cell_type_prop = 1, sim_method = c('copula', 'ind'),
                                    cell_sample = FALSE){
+  if(length(model_params) != length(cell_type_prop)){
+    stop('The length of cell_type_prop is not the same as the length of model_params.')
+  }
+
   n_cell_type <- length(cell_type_prop)
   if(cell_sample == TRUE){
     n_cell_each <- as.numeric(rmultinom(1, size = n_cell_new, prob = cell_type_prop))
