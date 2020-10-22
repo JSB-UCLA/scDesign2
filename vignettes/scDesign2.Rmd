@@ -78,7 +78,7 @@ Finally, a warning before we proceed: the code for model fitting and data genera
 # Task 1: Fit and simulate for a single cell type
 Our first task is to use scDesign2 to fit and simulate data for a single cell type. Here we choose the `'Stem'` type in the loaded dataset, but any cell type can be tested.
 
-To do this task, we can simply call two functions successively: `fit_model_to_cell_type()` for model fitting, and `simulate_count_regular()` for data simulation. The two most important arguments for `fit_model_to_cell_type()` is the input data matrix, and a character string that indicates which cell type(s) we want to fit to. The two most important arguments for `simulate_count_regular()` is the fitted model, which is just the object returned by `fit_model_to_cell_type()`, and `n_cell_new`, which can be any positive integer. Here, `n_cell_new` is set to the same as the number of cells of type `'Stem'` in the test data.
+To do this task, we can simply call two functions successively: `fit_model_scDesign2()` for model fitting, and `simulate_count_scDesign2()` for data simulation. The two most important arguments for `fit_model_scDesign2()` is the input data matrix, and a character string that indicates which cell type(s) we want to fit to. The two most important arguments for `simulate_count_scDesign2()` is the fitted model, which is just the object returned by `fit_model_scDesign2()`, and `n_cell_new`, which can be any positive integer. Here, `n_cell_new` is set to the same as the number of cells of type `'Stem'` in the test data.
 
 ```{r fit and simulate for a single cell type,eval=FALSE}
 # set function parameter values ---------------------------------------------------------
@@ -86,8 +86,8 @@ n_cell_new <- ncol(testcount[, colnames(testcount) == 'Stem'])
 
 # fit model and simulate data -----------------------------------------------------------
 set.seed(1)
-copula_result <- fit_model_to_cell_type(traincount, 'Stem', sim_method = 'copula')
-sim_count_copula <- simulate_count_regular(copula_result, n_cell_new, sim_method = 'copula')
+copula_result <- fit_model_scDesign2(traincount, 'Stem', sim_method = 'copula')
+sim_count_copula <- simulate_count_scDesign2(copula_result, n_cell_new, sim_method = 'copula')
 
 # save the model parameters and the simulated data --------------------------------------
 saveRDS(copula_result, file = 'copula_result_Stem_demo.rds')
@@ -227,9 +227,9 @@ The above two sets of results serve as good verifications that in this single ce
 # Task 2: Fit and simulate for multiple cell types
 Our second task is to use scDesign2 to fit and simulate data for multiple cell types. Here we choose six cell types as an example.
 
-To do this task, we use the same two functions as in task 1: `fit_model_to_cell_type()` for model fitting, and `simulate_count_regular()`. The syntax for calling these two functions are almost the same as before, with two exceptions. First, since model fitting is performed separately for each cell type, they can be run in parallel, which can be achieved by specifying the `ncores` argument in `fit_model_to_cell_type()` to be larger than 1. Second, when simulating new data, the `cell_type_prop` argument needs to be specified to indicate the cell type proportions in the new data. It should take a numeric vector with the same length as the number of cell types selected. This vector doesn't need to be normalized to sum to 1. For our example, `n_cell_new` and `cell_type_prop` are set to be consistent with the test data.
+To do this task, we use the same two functions as in task 1: `fit_model_scDesign2()` for model fitting, and `simulate_count_scDesign2()`. The syntax for calling these two functions are almost the same as before, with two exceptions. First, since model fitting is performed separately for each cell type, they can be run in parallel, which can be achieved by specifying the `ncores` argument in `fit_model_scDesign2()` to be larger than 1. Second, when simulating new data, the `cell_type_prop` argument needs to be specified to indicate the cell type proportions in the new data. It should take a numeric vector with the same length as the number of cell types selected. This vector doesn't need to be normalized to sum to 1. For our example, `n_cell_new` and `cell_type_prop` are set to be consistent with the test data.
 
-One last detail is that for the `simulate_count_regular()` function, it has an argument called `cell_sample`, which can control whether the number of cells for each cell type should be sampled according to a multinomial distribution. To be consistent with the test data, we will leave it as the default value, `FALSE`.
+One last detail is that for the `simulate_count_scDesign2()` function, it has an argument called `cell_sample`, which can control whether the number of cells for each cell type should be sampled according to a multinomial distribution. To be consistent with the test data, we will leave it as the default value, `FALSE`.
 
 ```{r fit and simulate for multiple cell types,eval=FALSE}
 # set function parameter values ---------------------------------------------------------
@@ -240,10 +240,10 @@ cell_type_prop <- table(colnames(testcount))[cell_type_sel]
 
 # fit model and simulate data -----------------------------------------------------------
 set.seed(1)
-copula_result <- fit_model_to_cell_type(traincount, cell_type_sel, sim_method = 'copula',
+copula_result <- fit_model_scDesign2(traincount, cell_type_sel, sim_method = 'copula',
                                         ncores = length(cell_type_sel))
-sim_count_copula <- simulate_count_regular(copula_result, n_cell_new, sim_method = 'copula',
-                                           cell_type_prop = cell_type_prop)
+sim_count_copula <- simulate_count_scDesign2(copula_result, n_cell_new, sim_method = 'copula',
+                                             cell_type_prop = cell_type_prop)
 
 # save the model parameters and the simulated data --------------------------------------
 saveRDS(copula_result, file = 'copula_result_multi_type_demo.rds')

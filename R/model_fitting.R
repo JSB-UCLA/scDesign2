@@ -295,10 +295,10 @@ fit_wo_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'poisson'
 #' as each of its element.
 #'
 #' @export
-fit_model_to_cell_type <- function(data_mat, cell_type_sel, sim_method = c('copula', 'ind'),
-                                   marginal = c('auto_choose', 'zinb', 'nb', 'poisson'),
-                                   jitter = TRUE, zp_cutoff = 0.8,
-                                   min_nonzero_num = 2, ncores = 1){
+fit_model_scDesign2 <- function(data_mat, cell_type_sel, sim_method = c('copula', 'ind'),
+                                marginal = c('auto_choose', 'zinb', 'nb', 'poisson'),
+                                jitter = TRUE, zp_cutoff = 0.8,
+                                min_nonzero_num = 2, ncores = 1){
   sim_method <- match.arg(sim_method)
   marginal <- match.arg(marginal)
 

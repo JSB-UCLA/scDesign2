@@ -12,7 +12,7 @@
 
 <meta name="author" content="Tianyi Sun" />
 
-<meta name="date" content="2020-10-05" />
+<meta name="date" content="2020-10-21" />
 
 <title>scDesign2 package manual</title>
 
@@ -301,7 +301,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 <h1 class="title toc-ignore">scDesign2 package manual</h1>
 <h4 class="author">Tianyi Sun</h4>
-<h4 class="date">2020-10-05</h4>
+<h4 class="date">2020-10-21</h4>
 
 
 
@@ -370,14 +370,14 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <div id="task-1-fit-and-simulate-for-a-single-cell-type" class="section level1">
 <h1>Task 1: Fit and simulate for a single cell type</h1>
 <p>Our first task is to use scDesign2 to fit and simulate data for a single cell type. Here we choose the <code>'Stem'</code> type in the loaded dataset, but any cell type can be tested.</p>
-<p>To do this task, we can simply call two functions successively: <code>fit_model_to_cell_type()</code> for model fitting, and <code>simulate_count_regular()</code> for data simulation. The two most important arguments for <code>fit_model_to_cell_type()</code> is the input data matrix, and a character string that indicates which cell type(s) we want to fit to. The two most important arguments for <code>simulate_count_regular()</code> is the fitted model, which is just the object returned by <code>fit_model_to_cell_type()</code>, and <code>n_cell_new</code>, which can be any positive integer. Here, <code>n_cell_new</code> is set to the same as the number of cells of type <code>'Stem'</code> in the test data.</p>
+<p>To do this task, we can simply call two functions successively: <code>fit_model_scDesign2()</code> for model fitting, and <code>simulate_count_scDesign2()</code> for data simulation. The two most important arguments for <code>fit_model_scDesign2()</code> is the input data matrix, and a character string that indicates which cell type(s) we want to fit to. The two most important arguments for <code>simulate_count_scDesign2()</code> is the fitted model, which is just the object returned by <code>fit_model_scDesign2()</code>, and <code>n_cell_new</code>, which can be any positive integer. Here, <code>n_cell_new</code> is set to the same as the number of cells of type <code>'Stem'</code> in the test data.</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="co"># set function parameter values ---------------------------------------------------------</span></a>
 <a class="sourceLine" id="cb5-2" data-line-number="2">n_cell_new &lt;-<span class="st"> </span><span class="kw">ncol</span>(testcount[, <span class="kw">colnames</span>(testcount) <span class="op">==</span><span class="st"> 'Stem'</span>])</a>
 <a class="sourceLine" id="cb5-3" data-line-number="3"></a>
 <a class="sourceLine" id="cb5-4" data-line-number="4"><span class="co"># fit model and simulate data -----------------------------------------------------------</span></a>
 <a class="sourceLine" id="cb5-5" data-line-number="5"><span class="kw">set.seed</span>(<span class="dv">1</span>)</a>
-<a class="sourceLine" id="cb5-6" data-line-number="6">copula_result &lt;-<span class="st"> </span><span class="kw">fit_model_to_cell_type</span>(traincount, <span class="st">'Stem'</span>, <span class="dt">sim_method =</span> <span class="st">'copula'</span>)</a>
-<a class="sourceLine" id="cb5-7" data-line-number="7">sim_count_copula &lt;-<span class="st"> </span><span class="kw">simulate_count_regular</span>(copula_result, n_cell_new, <span class="dt">sim_method =</span> <span class="st">'copula'</span>)</a>
+<a class="sourceLine" id="cb5-6" data-line-number="6">copula_result &lt;-<span class="st"> </span><span class="kw">fit_model_scDesign2</span>(traincount, <span class="st">'Stem'</span>, <span class="dt">sim_method =</span> <span class="st">'copula'</span>)</a>
+<a class="sourceLine" id="cb5-7" data-line-number="7">sim_count_copula &lt;-<span class="st"> </span><span class="kw">simulate_count_scDesign2</span>(copula_result, n_cell_new, <span class="dt">sim_method =</span> <span class="st">'copula'</span>)</a>
 <a class="sourceLine" id="cb5-8" data-line-number="8"></a>
 <a class="sourceLine" id="cb5-9" data-line-number="9"><span class="co"># save the model parameters and the simulated data --------------------------------------</span></a>
 <a class="sourceLine" id="cb5-10" data-line-number="10"><span class="kw">saveRDS</span>(copula_result, <span class="dt">file =</span> <span class="st">'copula_result_Stem_demo.rds'</span>)</a>
@@ -500,8 +500,8 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <div id="task-2-fit-and-simulate-for-multiple-cell-types" class="section level1">
 <h1>Task 2: Fit and simulate for multiple cell types</h1>
 <p>Our second task is to use scDesign2 to fit and simulate data for multiple cell types. Here we choose six cell types as an example.</p>
-<p>To do this task, we use the same two functions as in task 1: <code>fit_model_to_cell_type()</code> for model fitting, and <code>simulate_count_regular()</code>. The syntax for calling these two functions are almost the same as before, with two exceptions. First, since model fitting is performed separately for each cell type, they can be run in parallel, which can be achieved by specifying the <code>ncores</code> argument in <code>fit_model_to_cell_type()</code> to be larger than 1. Second, when simulating new data, the <code>cell_type_prop</code> argument needs to be specified to indicate the cell type proportions in the new data. It should take a numeric vector with the same length as the number of cell types selected. This vector doesn’t need to be normalized to sum to 1. For our example, <code>n_cell_new</code> and <code>cell_type_prop</code> are set to be consistent with the test data.</p>
-<p>One last detail is that for the <code>simulate_count_regular()</code> function, it has an argument called <code>cell_sample</code>, which can control whether the number of cells for each cell type should be sampled according to a multinomial distribution. To be consistent with the test data, we will leave it as the default value, <code>FALSE</code>.</p>
+<p>To do this task, we use the same two functions as in task 1: <code>fit_model_scDesign2()</code> for model fitting, and <code>simulate_count_scDesign2()</code>. The syntax for calling these two functions are almost the same as before, with two exceptions. First, since model fitting is performed separately for each cell type, they can be run in parallel, which can be achieved by specifying the <code>ncores</code> argument in <code>fit_model_scDesign2()</code> to be larger than 1. Second, when simulating new data, the <code>cell_type_prop</code> argument needs to be specified to indicate the cell type proportions in the new data. It should take a numeric vector with the same length as the number of cell types selected. This vector doesn’t need to be normalized to sum to 1. For our example, <code>n_cell_new</code> and <code>cell_type_prop</code> are set to be consistent with the test data.</p>
+<p>One last detail is that for the <code>simulate_count_scDesign2()</code> function, it has an argument called <code>cell_sample</code>, which can control whether the number of cells for each cell type should be sampled according to a multinomial distribution. To be consistent with the test data, we will leave it as the default value, <code>FALSE</code>.</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="co"># set function parameter values ---------------------------------------------------------</span></a>
 <a class="sourceLine" id="cb8-2" data-line-number="2">cell_type_sel &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">&quot;Stem&quot;</span>, <span class="st">&quot;Goblet&quot;</span>, <span class="st">&quot;Tuft&quot;</span>, <span class="st">&quot;TA.Early&quot;</span>,</a>
 <a class="sourceLine" id="cb8-3" data-line-number="3">                   <span class="st">&quot;Enterocyte.Progenitor&quot;</span>, <span class="st">&quot;Enterocyte.Progenitor.Early&quot;</span>)</a>
@@ -510,10 +510,10 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <a class="sourceLine" id="cb8-6" data-line-number="6"></a>
 <a class="sourceLine" id="cb8-7" data-line-number="7"><span class="co"># fit model and simulate data -----------------------------------------------------------</span></a>
 <a class="sourceLine" id="cb8-8" data-line-number="8"><span class="kw">set.seed</span>(<span class="dv">1</span>)</a>
-<a class="sourceLine" id="cb8-9" data-line-number="9">copula_result &lt;-<span class="st"> </span><span class="kw">fit_model_to_cell_type</span>(traincount, cell_type_sel, <span class="dt">sim_method =</span> <span class="st">'copula'</span>,</a>
+<a class="sourceLine" id="cb8-9" data-line-number="9">copula_result &lt;-<span class="st"> </span><span class="kw">fit_model_scDesign2</span>(traincount, cell_type_sel, <span class="dt">sim_method =</span> <span class="st">'copula'</span>,</a>
 <a class="sourceLine" id="cb8-10" data-line-number="10">                                        <span class="dt">ncores =</span> <span class="kw">length</span>(cell_type_sel))</a>
-<a class="sourceLine" id="cb8-11" data-line-number="11">sim_count_copula &lt;-<span class="st"> </span><span class="kw">simulate_count_regular</span>(copula_result, n_cell_new, <span class="dt">sim_method =</span> <span class="st">'copula'</span>,</a>
-<a class="sourceLine" id="cb8-12" data-line-number="12">                                           <span class="dt">cell_type_prop =</span> cell_type_prop)</a>
+<a class="sourceLine" id="cb8-11" data-line-number="11">sim_count_copula &lt;-<span class="st"> </span><span class="kw">simulate_count_scDesign2</span>(copula_result, n_cell_new, <span class="dt">sim_method =</span> <span class="st">'copula'</span>,</a>
+<a class="sourceLine" id="cb8-12" data-line-number="12">                                             <span class="dt">cell_type_prop =</span> cell_type_prop)</a>
 <a class="sourceLine" id="cb8-13" data-line-number="13"></a>
 <a class="sourceLine" id="cb8-14" data-line-number="14"><span class="co"># save the model parameters and the simulated data --------------------------------------</span></a>
 <a class="sourceLine" id="cb8-15" data-line-number="15"><span class="kw">saveRDS</span>(copula_result, <span class="dt">file =</span> <span class="st">'copula_result_multi_type_demo.rds'</span>)</a>
