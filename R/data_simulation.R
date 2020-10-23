@@ -257,7 +257,7 @@ simulate_count_scDesign2 <- function(model_params, n_cell_new, cell_type_prop = 
 
   if(is.null(total_count_new)) reseq_method <- 'mean_scale'
 
-  if(length(model_params)!=cell_type_prop){
+  if(length(model_params)!=length(cell_type_prop)){
     stop('Cell type proportion should have the same length as the number of models.')
   }
 
