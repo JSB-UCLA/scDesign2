@@ -35,6 +35,7 @@ library(plyr)      # mapvalues
 library(reshape2)  # melt
 library(gridExtra) # arrangeGrob
 library(ggpubr)    # as_ggplot
+library(cowplot)   # draw_plot_label
 library(ggplot2); theme_set(theme_bw());
 ```
 
@@ -357,6 +358,440 @@ From the above dimensionality reduction plots, we can see that the patterns of t
 The above analysis indicates that in this multiple cell types case, the simulated data by scDesign2 can also mimic real data to a decent extent.
 
 
+# Task 3: Application in clustering
+Our third task is to demonstrate how to use scDesign2 to find the optimal design of experiment and choice of cell clustering methods. This can be achieved by generating a series of count matrices with varying cell numbers and/or sequencing depths.
+
+Here, we consider two experimental design scenarios: (1) vary the total sequencing depth while fixing the total number of cells to sequence, and (2) vary the total number of cells to sequence while fixing the total sequencing depth. For each design scenario, we will generate a series of count matrices and then test the performance of clustering methods on them. We will consider two clustering methods: the Louvain method implemented in the Seurat package, and SC3.
+
+```{r fit model from original data,eval=FALSE}
+cell_type_sel <- c("Stem", "Goblet", "Tuft", "TA.Early",
+                   "Enterocyte.Progenitor", "Enterocyte.Progenitor.Early")
+cell_type_prop <- table(colnames(data_mat))[cell_type_sel]
+
+set.seed(1)
+copula_result <- fit_model_scDesign2(data_mat, cell_type_sel, sim_method = 'copula',
+                                     ncores = length(cell_type_sel))
+
+saveRDS(copula_result, file = 'copula_result_exp_design_demo.rds')
+```
+
+```{r simulate count scenario 1,eval=FALSE}
+total_count_old <- sum(data_mat[, colnames(data_mat) %in% cell_type_sel])
+n_cell_old <- ncol(data_mat[, colnames(data_mat) %in% cell_type_sel])
+
+adj_factor <- c(1/128, 1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1,
+                2, 4, 8, 16, 32, 64, 128)
+
+library(parallel)
+set.seed(1)
+print('simulating count (vary seq depth) ......\n')
+sim_count <- mclapply(1:length(adj_factor), function(iter){
+  simulate_count_scDesign2(copula_result, 
+                           total_count_old = total_count_old,
+                           n_cell_old = n_cell_old,
+                           total_count_new = round(adj_factor[iter] * total_count_old),
+                           n_cell_new = n_cell_old,
+                           cell_type_prop = cell_type_prop,
+                           reseq_method = 'mean_scale', cell_sample = TRUE)
+}, mc.cores = length(adj_factor))
+
+saveRDS(sim_count, 'sim_count_vary_seq_depth_demo.rds')
+
+sim_count_summary <- data.frame(seq_depth = sapply(sim_count, sum),
+                                n_cell = sapply(sim_count, ncol))
+sim_count_label <- lapply(sim_count, colnames)
+save(sim_count_summary, sim_count_label,
+     file = 'sim_count_info_vary_seq_depth_demo.rda')
+```
+
+
+```{r simulate count scenario 2,eval=FALSE}
+set.seed(1)
+print('simulating count (vary cell number) ......\n')
+sim_count <- mclapply(1:length(adj_factor), function(iter){
+  simulate_count_scDesign2(copula_result, 
+                           total_count_old = total_count_old,
+                           n_cell_old = n_cell_old,
+                           total_count_new = total_count_old,
+                           n_cell_new = round(adj_factor[iter] * n_cell_old),
+                           cell_type_prop = cell_type_prop,
+                           reseq_method = 'mean_scale', cell_sample = TRUE)
+}, mc.cores = length(adj_factor))
+
+saveRDS(sim_count, 'sim_count_vary_cell_number_demo.rds')
+
+sim_count_summary <- data.frame(seq_depth = sapply(sim_count, sum),
+                                n_cell = sapply(sim_count, ncol))
+sim_count_label <- lapply(sim_count, colnames)
+save(sim_count_summary, sim_count_label,
+     file = 'sim_count_info_vary_cell_number_demo.rda')
+```
+
+```{r dim reduction scenario 1,eval=FALSE}
+sim_count <- readRDS('sim_count_vary_seq_depth_demo.rds')
+
+set.seed(1)
+Rtsne_sim <- lapply(1:length(sim_count), function(iter){
+  try(Rtsne(log(t(sim_count[[iter]])+1),
+            perplexity = min(30, floor((nrow(t(sim_count[[iter]]))-1)/3))))
+})
+
+saveRDS(Rtsne_sim, file = 'tsne_sim_vary_seq_depth_demo.rds')
+```
+
+
+```{r Seurat Louvain clustering scenario 1,eval=FALSE}
+library(Seurat)
+library(mclust)
+library(aricode)
+
+set.seed(1)
+clustering_result_seurat <- mclapply(1:length(sim_count), function(iter){
+  if(is.null(rownames(sim_count[[iter]])))
+    rownames(sim_count[[iter]]) <- 1:nrow(sim_count[[iter]])
+  count_seurat <- CreateSeuratObject(counts = sim_count[[iter]])
+  ### normalization
+  count_seurat <- NormalizeData(count_seurat)
+  ### select highly variable genes
+  count_seurat <- FindVariableFeatures(count_seurat, selection.method = "vst", nfeatures = 2000)
+  ### scale the data
+  count_seurat <- ScaleData(count_seurat)
+  ### PCA
+  count_seurat <- RunPCA(count_seurat,
+                         features = VariableFeatures(object = count_seurat),
+                         verbose = F)
+  ### clustering
+  count_seurat <- FindNeighbors(count_seurat, dims = 1:10)
+  count_seurat <- FindClusters(count_seurat, resolution = 0.5)
+  ### results
+  cluster_predicted <- as.integer(Idents(count_seurat))
+  ARI <- adjustedRandIndex(cluster_predicted, colnames(sim_count[[iter]]))
+  ami <- AMI(cluster_predicted, colnames(sim_count[[iter]]))
+  list(cluster_predicted = cluster_predicted, ARI = ARI, ami = ami)
+}, mc.cores = length(sim_count))
+
+print(clustering_result_seurat)
+saveRDS(clustering_result_seurat,
+        file = 'clustering_result_seurat_vary_seq_depth_demo.rds')
+```
+
+```{r SC3 clustering scenario 1,eval=FALSE}
+library(SingleCellExperiment)
+library(SC3)
+library(scater)
+RNGkind("L'Ecuyer-CMRG")
+set.seed(1)
+clustering_result_SC3 <- mclapply(1:length(sim_count), function(iter){
+  sce <- SingleCellExperiment(
+    assays = list(
+      counts = as.matrix(sim_count[[iter]]),
+      logcounts = log2(as.matrix(sim_count[[iter]]) + 1)
+    ),
+    colData = colnames(sim_count[[iter]])
+  )
+  if(is.null(rownames(sim_count[[iter]])))
+    rownames(sim_count[[iter]]) <- 1:nrow(sim_count[[iter]])
+  rowData(sce)$feature_symbol <- rownames(sim_count[[iter]])
+  # remove features with duplicated names
+  sce <- sce[!duplicated(rowData(sce)$feature_symbol), ]
+  sce <- try(sc3(sce, ks = length(cell_type_sel), n_cores = 10))
+  if(class(sce) == "try-error") return("try-error")
+  
+  if(ncol(sim_count[[iter]]) > 5000)
+    sce <- sc3_run_svm(sce, ks = length(cell_type_sel))
+  
+  col_data <- colData(sce)
+  col_name <- paste0('sc3_', length(cell_type_sel), '_clusters')
+  cluster_predicted <- as.integer(col_data@listData[col_name][[1]])
+  ARI <- adjustedRandIndex(cluster_predicted, colnames(sim_count[[iter]]))
+  ami <- AMI(cluster_predicted, colnames(sim_count[[iter]]))
+  print(ARI)
+  list(cluster_predicted = cluster_predicted, ARI = ARI, ami = ami)
+}, mc.cores = 1)  ### there is parallel inside
+
+print(str(clustering_result_SC3))
+saveRDS(clustering_result_SC3,
+        file = 'clustering_result_SC3_vary_seq_depth_demo.rds')
+```
+
+
+```{r load exp design scenario 1 summary,include=FALSE}
+Rtsne_sim <- readRDS(system.file("extdata", "tsne_sim_vary_seq_depth_demo.rds", package = "scDesign2"))
+
+clustering_result_seurat <-
+  readRDS(system.file("extdata", "clustering_result_seurat_vary_seq_depth_demo.rds", package = "scDesign2"))
+
+clustering_result_SC3 <- 
+  readRDS(system.file("extdata", "clustering_result_SC3_vary_seq_depth_demo.rds", package = "scDesign2"))
+
+load(system.file("extdata", "sim_count_info_vary_seq_depth_demo.rda", package = "scDesign2"))
+```
+
+
+```{r exp design clustering scenario 1 plots,fig.width=7.2,fig.height=8,fig.align='center'}
+exp_type = 'vary_seq_depth'
+
+cell_type_sel <- c("Stem", "Goblet", "Tuft", "TA.Early",
+                   "Enterocyte.Progenitor", "Enterocyte.Progenitor.Early")
+data_mat_sel <- data_mat[, colnames(data_mat) %in% cell_type_sel]
+
+# simplify cell type names for display on plot
+cell_type_sel_short <- c("Stem", "Goblet", "Tuft", "TA.Early", "EP", "EP.Early")
+
+if_success_clustering <- which(sapply(clustering_result_seurat, function(x){
+  class(x) != 'try-error'
+}) == TRUE)
+if_success_clustering_SC3 <- which(sapply(clustering_result_SC3, function(x){
+  class(x) == 'list' # not chr 'try-error'
+}) == TRUE)
+if_success_tsne <- which(sapply(Rtsne_sim, function(x){
+  class(x) != 'try-error'
+}) == TRUE)
+if_success_seurat_tsne <- intersect(if_success_clustering, if_success_tsne)
+if_success_SC3_tsne <- intersect(if_success_clustering_SC3, if_success_tsne)
+if_success_all <- intersect(if_success_clustering, if_success_SC3_tsne)
+
+#################### prepare for tsne_plots ######################
+if(exp_type == 'vary_seq_depth'){
+  xlabel <- sim_count_summary$seq_depth
+  real_info <- sum(data_mat_sel)
+  real_info_plot <- real_info / 1e6
+  x_axis <- 'total number of\nUMIs'
+  x_axis_metric <- 'total number of UMIs (M)'
+}else if(exp_type == 'vary_cell_number'){
+  xlabel <- sim_count_summary$n_cell
+  real_info <- ncol(data_mat_sel)
+  real_info_plot <- real_info
+  x_axis <- 'cell number\n'
+  x_axis_metric <- 'cell number'
+}
+
+dat_tsne <- Reduce(rbind, lapply(if_success_all, function(x){
+  cbind(Rtsne_sim[[x]]$Y, x,
+        clustering_result_seurat[[x]]$cluster_predicted,
+        clustering_result_SC3[[x]]$cluster_predicted,
+        sim_count_label[[x]])
+}))
+colnames(dat_tsne) <- c('x', 'y', 'exp_num', 'Seurat', 'SC3', 'True')
+dat_tsne <- as.data.frame(dat_tsne)
+dat_tsne$x <- as.numeric(dat_tsne$x)
+dat_tsne$y <- as.numeric(dat_tsne$y)
+dat_tsne$exp_num <- as.integer(dat_tsne$exp_num)
+dat_tsne$True <- mapvalues(dat_tsne$True, from = cell_type_sel,
+                           to = 1:length(cell_type_sel))
+
+which_iter <- c(3, 5, 7, 9)
+plot_sel_id <- if_success_all[which_iter]
+dat_tsne <- dat_tsne[dat_tsne$exp_num %in% plot_sel_id, ]
+
+### match clusters
+for(exp_num_iter in plot_sel_id){
+  temp_dat <- dat_tsne[dat_tsne$exp_num == exp_num_iter, ]
+  label_order_Seurat <- names(sort(table(temp_dat$Seurat), decreasing = TRUE))
+  label_order_SC3 <- names(sort(table(temp_dat$SC3), decreasing = TRUE))
+  label_order_True <- names(sort(table(temp_dat$True), decreasing = TRUE))
+  get_mapper <- function(label_predicted, label_true){
+    mapper_clust <- 1:length(label_predicted)
+    if(length(label_predicted) > length(label_true)){
+      mapper_clust[1:length(label_true)] <- label_true
+    }else{
+      mapper_clust <- label_true[1:length(label_predicted)]
+    }
+    names(mapper_clust) <- label_predicted
+    mapper_clust
+  }
+  mapper_Seurat <- get_mapper(label_order_Seurat, label_order_True)
+  mapper_SC3 <- get_mapper(label_order_SC3, label_order_True)
+  
+  temp_dat_new <- temp_dat
+  for(clust_label in names(mapper_Seurat)){
+    temp_dat_new$Seurat[temp_dat$Seurat == clust_label] <- mapper_Seurat[clust_label]
+  }
+  for(clust_label in names(mapper_Seurat)){
+    temp_dat_new$SC3[temp_dat$SC3 == clust_label] <- mapper_SC3[clust_label]
+  }
+  dat_tsne[dat_tsne$exp_num == exp_num_iter, ] <- temp_dat_new
+}
+
+dat_tsne <- melt(dat_tsne, id.vars = c('x', 'y', 'exp_num'),
+                 measure.vars = c('Seurat', 'SC3', 'True'))
+dat_tsne$value <- factor(dat_tsne$value)
+
+if(exp_type == 'vary_seq_depth'){
+  xxlabel <- round(xlabel / 1e6, 2)
+  plot_names <- paste0(x_axis, ' = ', xxlabel[plot_sel_id], 'M')
+}else if(exp_type == 'vary_cell_number'){
+  xxlabel <- xlabel
+  plot_names <- paste0(x_axis, ' = ', xxlabel[plot_sel_id])
+}
+plot_names <- paste0('(', 1:length(plot_sel_id), ') ', plot_names)
+names(plot_names) <- plot_sel_id
+labeller_fun <- function(value){
+  if(value == 'Seurat' || value == 'SC3' || value == 'True')
+    return(value)
+  else
+    return(plot_names[as.character(value)])
+}
+
+
+max_n_clust <- max(as.numeric(dat_tsne$value))
+clust_label <- paste0('cluster ', 1:length(cell_type_sel),
+                      ' /\n', cell_type_sel_short)
+if(max_n_clust > length(cell_type_sel))
+  clust_label <- c(clust_label, paste0('cluster ',
+                                       (length(cell_type_sel)+1):max_n_clust))
+dat_tsne$value <- mapvalues(dat_tsne$value, from = levels(dat_tsne$value),
+                            to = clust_label)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+               "#0072B2", "#D55E00", "#CC79A7")
+if(max_n_clust > 8)
+{
+  # cbPalette <- rainbow(length(cell_type_sel))
+  colourCount = max_n_clust
+  getPalette = colorRampPalette(brewer.pal(8, "Dark2"))
+  cbPalette <- getPalette(colourCount)
+}else{
+  cbPalette <- cbPalette[1:max_n_clust]
+}
+names(cbPalette) <- clust_label
+colScale <- scale_colour_manual(name = "labels",values = cbPalette)
+point_size <- 0.5; point_transp <- 0.6
+
+################ tsne plot ########################
+tsne_plots <- ggplot(data = dat_tsne, aes(x = x, y = y, color = value)) +
+  geom_point(cex = point_size, alpha = point_transp) +
+  facet_grid(vars(variable), vars(exp_num), labeller = as_labeller(labeller_fun)) +
+  colScale +
+  theme(plot.title = element_text(size = 30, hjust = 0.5, vjust=2),
+        strip.text = element_text(size=10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 10),
+        legend.position = 'none') +
+  guides(color = guide_legend(override.aes = list(size = 5, alpha = 1))) +
+  labs(x = "t-SNE 1", y = "t-SNE 2")# + 
+
+################ prepare for metric plots ########################
+ami_seurat <- sapply(if_success_clustering, function(x){
+  clustering_result_seurat[[x]]$ami
+})
+ami_SC3 <- sapply(if_success_clustering_SC3, function(x){
+  clustering_result_SC3[[x]]$ami
+})
+ari_seurat <- sapply(if_success_clustering, function(x){
+  clustering_result_seurat[[x]]$ARI
+})
+ari_SC3 <- sapply(if_success_clustering_SC3, function(x){
+  clustering_result_SC3[[x]]$ARI
+})
+
+metric_dat <- data.frame(x = c(xxlabel[if_success_clustering],
+                               xxlabel[if_success_clustering_SC3]),
+                         AMI = c(ami_seurat, ami_SC3),
+                         ARI = c(ari_seurat, ari_SC3),
+                         method_name = c(rep('Seurat', length(if_success_clustering)),
+                                         rep('SC3', length(if_success_clustering_SC3))))
+metric_sel <- data.frame(x = c(xxlabel[plot_sel_id], xxlabel[plot_sel_id]),
+                         AMI = c(ami_seurat[if_success_clustering %in% plot_sel_id],
+                                 ami_SC3[if_success_clustering_SC3 %in% plot_sel_id]),
+                         ARI = c(ari_seurat[if_success_clustering %in% plot_sel_id],
+                                 ari_SC3[if_success_clustering_SC3 %in% plot_sel_id]),
+                         method_name = c(rep('Seurat', length(plot_sel_id)),
+                                         rep('SC3', length(plot_sel_id))))
+metric_dat <- melt(metric_dat, id.vars = c('x', 'method_name'),
+                   measure.vars = c('AMI', 'ARI'))
+metric_sel <- melt(metric_sel, id.vars = c('x', 'method_name'),
+                   measure.vars = c('AMI', 'ARI'))
+metric_dat$method_name <- factor(metric_dat$method_name, levels = c('Seurat', 'SC3'))
+metric_sel$method_name <- factor(metric_sel$method_name, levels = c('Seurat', 'SC3'))
+
+################ metric plots ########################
+metric_plots <- ggplot(mapping = aes(x = x, y = value)) +
+  geom_line(data = metric_dat, mapping = aes(color = variable),lwd = 1.1) +
+  geom_point(data = metric_sel, cex = 2) +
+  facet_wrap(~method_name) +
+  scale_x_continuous(trans = 'log10',
+                     sec.axis = dup_axis(breaks = xxlabel[plot_sel_id],
+                                         labels = paste0('(', 1:length(plot_sel_id), ')'),
+                                         name = '')) +
+  ylim(0, 1) +
+  theme(plot.title = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.text = element_text(size=10),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 10),
+        legend.position = 'none') +
+  geom_vline(xintercept = real_info_plot, linetype="dotted", lwd = 1) +
+  labs(y= "", x = x_axis_metric) +# + coord_fixed()
+  scale_color_brewer(palette = "Set1")
+
+########################### legend plot #################################
+tsne_plots_aux <- ggplot(data = dat_tsne, aes(x = x, y = y, color = value)) +
+  geom_point(cex = point_size, alpha = point_transp) +
+  facet_grid(vars(variable), vars(exp_num), labeller = as_labeller(labeller_fun)) +
+  colScale +
+  theme(legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.key.height = unit(0.4, "in")) +
+  guides(color = guide_legend(override.aes = list(size = 2, alpha = 1))) +
+  labs(x = "t-SNE 1", y = "t-SNE 2") + 
+  coord_fixed()
+
+metric_plots_aux <- ggplot(mapping = aes(x = x, y = value)) +
+  geom_line(data = metric_dat, mapping = aes(color = variable),lwd = 1.3) +
+  geom_point(data = metric_sel, cex = 2) +
+  facet_wrap(~method_name) +
+  theme(legend.title = element_blank(),
+        legend.key.height = unit(0.3, "in"),
+        legend.key.width = unit(0.5, "in"),
+        legend.text = element_text(size = 10)) +
+  geom_vline(xintercept = real_info_plot, linetype="dotted", lwd = 1) +
+  labs(y= "", x = x_axis_metric) +# + coord_fixed()
+  scale_color_brewer(palette = "Set1")
+
+if(exp_type == 'vary_cell_number'){
+  vline_lab <- 'real data\ncell num.'
+}else if(exp_type == 'vary_seq_depth'){
+  vline_lab <- 'real data\nseq. depth'
+}
+colvline <- '#000000'
+names(colvline) <- vline_lab
+colScale_vline <- scale_colour_manual(name = "labels", values = colvline)
+dat_vline = data.frame(real_data = real_info_plot, vline_label = vline_lab)
+vline_aux <- ggplot() +
+  geom_vline(data = dat_vline, mapping = aes(xintercept = real_data,
+                                             color = vline_label),
+             show.legend = TRUE, linetype="dotted", lwd = 1) +
+  theme(legend.title = element_blank(),
+        legend.key.height = unit(0.3, "in"),
+        # legend.key.width = unit(0.3, "in"),
+        legend.text = element_text(size = 10)) + colScale_vline
+
+get_legend<-function(myggplot){
+  tmp <- ggplot_gtable(ggplot_build(myggplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+legend_tsne <- get_legend(tsne_plots_aux)
+legend_metric <- get_legend(metric_plots_aux)
+legend_vline <- get_legend(vline_aux)
+
+
+######################### final plot ####################################
+gt <- arrangeGrob(arrangeGrob(tsne_plots, metric_plots,
+                              heights = c(4.0, 1.8)),
+                  arrangeGrob(legend_tsne, legend_metric, legend_vline,
+                              heights = c(4.0, 0.9,0.9)),
+                  widths = c(8, 1.3))
+final_plot <- as_ggplot(gt) +
+  draw_plot_label(label = c("a", "b"), size = 15,
+                  x = c(0, 0),
+                  y = c(1, 1.8/5.8))
+print(final_plot)
+```
 
 
 
