@@ -279,7 +279,7 @@ simulate_count_scDesign2 <- function(model_params, n_cell_new, cell_type_prop = 
   if(reseq_method == 'mean_scale'){
     n_cell_each
     if(is.null(total_count_new)){
-      r <- 1
+      r <- rep(1, n_cell_type)
     }else if(length(total_count_new) == 1){
       r <- rep(total_count_new / sum((total_count_old / n_cell_old) * n_cell_each),
                n_cell_type)
