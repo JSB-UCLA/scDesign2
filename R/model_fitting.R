@@ -206,7 +206,7 @@ fit_Gaussian_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'po
   gene_sel3 <- (1:p)[-c(gene_sel1, gene_sel2)]
 
   if(length(gene_sel1) > 0){
-    marginal_result1 <- fit_marginals(x[gene_sel1, ], marginal, jitter = jitter, DT = TRUE)
+    marginal_result1 <- fit_marginals(x[gene_sel1, , drop = FALSE], marginal, jitter = jitter, DT = TRUE)
     quantile_normal <- qnorm(marginal_result1$u)
     cov_mat <- cor(t(quantile_normal))
   }else{
@@ -215,7 +215,7 @@ fit_Gaussian_copula <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'po
   }
 
   if(length(gene_sel2) > 0){
-    marginal_result2 <- fit_marginals(x[gene_sel2, ], marginal, DT = FALSE)
+    marginal_result2 <- fit_marginals(x[gene_sel2, , drop = FALSE], marginal, DT = FALSE)
   }else{
     marginal_result2 = NULL
   }
