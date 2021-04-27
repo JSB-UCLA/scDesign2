@@ -6,7 +6,7 @@ Author: Tianyi Sun
 Maintainer: Tianyi Sun <tianyisun@ucla.edu>
 Description: A flexible statistical simulator for scRNA-seq data that can generate data with
     gene correlation captured, and with varing number of cells and sequencing depth.
-License: GPL-2
+License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.1
