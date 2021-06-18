@@ -11,3 +11,5 @@ devtools::install_github("JSB-UCLA/scDesign2")
 
 ## Tutorial
 This [tutorial](https://htmlpreview.github.io/?https://github.com/JSB-UCLA/scDesign2/blob/master/vignettes/scDesign2.html) introduces how to use the scDesign2 R package.
+
+This [tutorial](https://htmlpreview.github.io/?https://github.com/JSB-UCLA/scDesign2/blob/master/vignettes/preprocess_clustering.html) introduces how cell clustering can be performed and evaluated before using the scDesign2 method.
