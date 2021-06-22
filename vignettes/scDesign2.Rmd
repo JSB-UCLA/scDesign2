@@ -54,7 +54,7 @@ dim(data_mat)
 table(colnames(data_mat))
 ```
 
-**scDesign2 requires that for the input gene expression matrix, each row should represent a gene, each column a cell, and each cell (column) is labelled with the cell type that it belongs to. Also, the entries in the input matrix should be count values (integers). Otherwise, rounding should be performed.** These requirements are met by the above loaded dataset. As can be seen from the above output, there are `r dim(data_mat)[1]` genes, `r dim(data_mat)[2]` cells, and a total of `r length(table(colnames(data_mat)))` cell types in this dataset.
+**scDesign2 requires that for the input gene expression matrix, each row should represent a gene, each column a cell, and each cell (column) is labelled with the cell type that it belongs to. Then each entry in the matrix represents the expression level of a gene in a cell. Moreover, the entries in the input matrix needs to be count values (integers). Otherwise, rounding needs to be performed.** These requirements are met by the above loaded dataset. As can be seen from the above output, there are `r dim(data_mat)[1]` genes, `r dim(data_mat)[2]` cells, and a total of `r length(table(colnames(data_mat)))` cell types in this dataset.
 
 Next, for a fair comparison, we will split the dataset into a training set and a test set. Only the training set will be used for model fitting. The test set will be used for evaluation, but results for the training set will also be included to demonstrate the variation between the training and test sets.
 ```{r split data into train and test sets}
