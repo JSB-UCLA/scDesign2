@@ -130,7 +130,7 @@ fit_marginals <- function(x, marginal = c('auto_choose', 'zinb', 'nb', 'poisson'
   if(DT){
     u <- t(sapply(1:p, function(iter){
       param <- params[iter, ]
-      gene <- x[iter, ]
+      gene <- unlist(x[iter,])
       prob0 <- param[1]
       u1 <- prob0 + (1 - prob0) * pnbinom(gene, size = param[2], mu = param[3])
       u2 <- (prob0 + (1 - prob0) * pnbinom(gene - 1, size = param[2], mu = param[3])) *
